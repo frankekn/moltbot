@@ -27,6 +27,7 @@ import {
 } from "../../config/sessions.js";
 import type { TtsAutoMode } from "../../config/types.tts.js";
 import { archiveSessionTranscripts } from "../../gateway/session-utils.fs.js";
+import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import { deliverSessionMaintenanceWarning } from "../../infra/session-maintenance-warning.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
@@ -381,7 +382,6 @@ export async function initSessionState(params: {
     sessionStore[retiredLegacyMainDelivery.key] = retiredLegacyMainDelivery.entry;
   }
   const entry = sessionStore[sessionKey];
-  const previousSessionEntry = resetTriggered && entry ? { ...entry } : undefined;
   const now = Date.now();
   const isThread = resolveThreadFlag({
     sessionKey,
@@ -407,6 +407,8 @@ export async function initSessionState(params: {
   const freshEntry = entry
     ? evaluateSessionFreshness({ updatedAt: entry.updatedAt, now, policy: resetPolicy }).fresh
     : false;
+  const previousSessionEntry = entry && (resetTriggered || !freshEntry) ? { ...entry } : undefined;
+  const shouldEmitImplicitArchivedHook = Boolean(previousSessionEntry && !resetTriggered);
 
   if (!isNewSession && freshEntry) {
     sessionId = entry.sessionId;
@@ -616,6 +618,17 @@ export async function initSessionState(params: {
       agentId,
       reason: "reset",
     });
+    if (shouldEmitImplicitArchivedHook) {
+      await triggerInternalHook(
+        createInternalHookEvent("session", "archived", sessionKey, {
+          cfg,
+          sessionEntry: previousSessionEntry,
+          previousSessionEntry,
+          archiveReason: "reset",
+          archiveSource: "auto-reply:init-session",
+        }),
+      );
+    }
   }
 
   const sessionCtx: TemplateContext = {
