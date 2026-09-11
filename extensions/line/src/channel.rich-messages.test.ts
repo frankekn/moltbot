@@ -1,5 +1,4 @@
 // Line tests cover typed rich-message boundaries.
-import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import { linePlugin } from "./channel.js";
 import { createActionCard } from "./flex-templates/basic-cards.js";
@@ -12,8 +11,8 @@ import {
 } from "./rich-messages.js";
 import type { LineRichCard } from "./types.js";
 
-function resolveChannelDataSchema() {
-  const discovery = lineMessageActions.describeMessageTool({
+function describeLineMessageTool() {
+  return lineMessageActions.describeMessageTool({
     cfg: {
       channels: {
         line: {
@@ -24,12 +23,6 @@ function resolveChannelDataSchema() {
       },
     },
   } as never);
-  const contribution = Array.isArray(discovery?.schema) ? discovery.schema[0] : discovery?.schema;
-  const schema = contribution?.properties.channelData;
-  if (!schema) {
-    throw new Error("expected LINE channelData schema");
-  }
-  return schema;
 }
 
 describe("LINE rich-message boundaries", () => {
@@ -582,45 +575,12 @@ describe("LINE rich-message boundaries", () => {
     },
   );
 
-  it("validates every typed LINE-specific rich-message shape", () => {
-    const schema = resolveChannelDataSchema();
-    const valid = [
-      {
-        line: {
-          location: { title: "Office", address: "1 Main St", latitude: 35.6, longitude: 139.7 },
-        },
-      },
-      { line: { card: { type: "media_player", title: "Song", status: "playing" } } },
-      { line: { card: { type: "event", title: "Meeting", date: "Monday" } } },
-      {
-        line: {
-          card: { type: "agenda", title: "Today", events: [{ title: "Standup", time: "9:00" }] },
-        },
-      },
-      {
-        line: {
-          card: {
-            type: "device",
-            name: "TV",
-            controls: [{ label: "Play", action: "play" }],
-          },
-        },
-      },
-      { line: { card: { type: "appletv_remote", name: "Living Room" } } },
-    ];
-
-    for (const channelData of valid) {
-      expect(Value.Check(schema, channelData), JSON.stringify(channelData)).toBe(true);
-    }
-    expect(
-      Value.Check(schema, { line: { location: { title: "Bad", address: "X", latitude: 91 } } }),
-    ).toBe(false);
-    expect(Value.Check(schema, { line: { card: { type: "event", title: "Missing date" } } })).toBe(
-      false,
-    );
-    expect(Value.Check(schema, { line: { flexMessage: { altText: "raw", contents: {} } } })).toBe(
-      false,
-    );
+  it("keeps provider-native LINE payloads out of the shared message tool schema", () => {
+    expect(describeLineMessageTool()).toMatchObject({
+      actions: ["send"],
+      capabilities: ["presentation"],
+      schema: null,
+    });
   });
 
   it("renders each typed card through its existing LINE Flex path", () => {
